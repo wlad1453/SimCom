@@ -1,0 +1,7 @@
+$Hrtc = 09;
+$Mrtc = 10;
+$Srtc = 11;
+$Htruck = 21;
+$Mtruck = 50;
+$Struck = 55;
+$servT = 10:01:40;

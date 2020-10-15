@@ -1,10 +1,4 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <title>sim800 connection</title>
-  </head>
-  <body>
-  <p>
   <?php   
     
 	/* Default data 
@@ -38,7 +32,7 @@
 	$servMo = strval( date("m") ); 
 	$servY = strval( date("Y") ); */
 	
-	echo "System time: " . $servH . ":" . $servM . ":" . $servS . "<br>";
+	echo "Time:" . $servH . ":" . $servM . ":" . $servS /* . "<br>"*/ ;
 	/* echo "System date: " . $servD . "/" . $servMo . "/" . $servY . "<br>"; */
 	
 		
@@ -47,12 +41,22 @@
 	$trucks_number = count($trucks);
 		
 	$data = "";
+	
+	if ( $Hrtc < 10 ) $data .= "\$Hrtc = " . "0" . $Hrtc . ";\r\n"; else $data .= "\$Hrtc = " . $Hrtc . ";\r\n";
+	if ( $Mrtc < 10 ) $data .= "\$Mrtc = " . "0" . $Mrtc . ";\r\n"; else $data .= "\$Mrtc = " . $Mrtc . ";\r\n";
+	if ( $Srtc < 10 ) $data .= "\$Srtc = " . "0" . $Srtc . ";\r\n"; else $data .= "\$Srtc = " . $Srtc . ";\r\n";
+	
+	if ( $Htruck < 10 ) $data .= "\$Htruck = " . "0" . $Htruck . ";\r\n"; else $data .= "\$Htruck = " . $Htruck . ";\r\n";
+	if ( $Mtruck < 10 ) $data .= "\$Mtruck = " . "0" . $Mtruck . ";\r\n"; else $data .= "\$Mtruck = " . $Mtruck . ";\r\n";
+	if ( $Struck < 10 ) $data .= "\$Struck = " . "0" . $Struck . ";\r\n"; else $data .= "\$Struck = " . $Struck . ";\r\n";
+	/*
 	$data .= "\$Hrtc = " . $Hrtc . ";\r\n";
 	$data .= "\$Mrtc = " . $Mrtc . ";\r\n";
 	$data .= "\$Srtc = " . $Srtc . ";\r\n";
 	$data .= "\$Htruck = " . $Htruck . ";\r\n";
 	$data .= "\$Mtruck = " . $Mtruck . ";\r\n";
-	$data .= "\$Struck = " . $Struck . ";\r\n";
+	$data .= "\$Struck = " . $Struck . ";\r\n";*/ 
+	
 	$data .= "\$servT = " . $servT . ";\r\n";
 	
 	
@@ -61,6 +65,3 @@
 	fclose($data_file);
 	
 	?>
-  </p>
-  </body>
-</html>

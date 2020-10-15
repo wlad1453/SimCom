@@ -54,8 +54,8 @@ extern void (* const eat_lcd_light_sw)(eat_bool sw, EatBLStep_enum step); // Tra
 void app_main(void *data);
 void app_func_ext1(void *data);
 void app_user1(void* data);					// Process User1 declaration.
-void time_out( EatRtc_st* data);
-void rtc_mem (char* data); 
+void show_time( EatRtc_st* data, char *msg);
+void show_rtc_mem (char* data); 
 void atcmd_to_modem(char* at_cmd, EatEvent_st *event);
 
 /* Local Function */
@@ -104,34 +104,24 @@ typedef struct {				// structure for an AT command
 } at_cmd;
 
 const at_cmd gprs_su[7] = {													// Array of GPRS set up commands
-	1,	"AT+SAPBR=0,1", "OK", "ERROR", NULL, NULL,							// disconnect GPRS service
-	2,	"AT+CCALR?", "", "", 1, 0,											// Check whether there is mobile network
-	3,	"AT+SAPBR = 3,1,\"CONTYPE\",\"GPRS\"", "OK", "ERROR", NULL, NULL,	// Connection type - GPRS
-	4,	"AT+SAPBR = 3,1,\"APN\",\"internet\"", "OK", "ERROR", NULL, NULL,  	// APN internet provider
-	5,	"AT+SAPBR = 3,1,\"USER\",\"\"", "OK", "ERROR", NULL, NULL,			// USER name / login if any
-	6, 	"AT+SAPBR = 3,1,\"PWD\",\"\"", "OK", "ERROR", NULL, NULL,			// password for the GPRS services
-	7,	"AT+SAPBR = 1,1", "OK", "ERROR", NULL, NULL							// connect to the GPRS network
+	1,	"AT+SAPBR=0,1\r\n", "OK", "ERROR", NULL, NULL,							// disconnect GPRS service
+	2,	"AT+CCALR?\r\n", "", "", 1, 0,											// Check whether there is mobile network
+	3,	"AT+SAPBR = 3,1,\"CONTYPE\",\"GPRS\"\r\n", "OK", "ERROR", NULL, NULL,	// Connection type - GPRS
+	4,	"AT+SAPBR = 3,1,\"APN\",\"internet\"\r\n", "OK", "ERROR", NULL, NULL,  	// APN internet provider
+	5,	"AT+SAPBR = 3,1,\"USER\",\"\"\r\n", "OK", "ERROR", NULL, NULL,			// USER name / login if any
+	6, 	"AT+SAPBR = 3,1,\"PWD\",\"\"\r\n", "OK", "ERROR", NULL, NULL,			// password for the GPRS services
+	7,	"AT+SAPBR = 1,1\r\n", "OK", "ERROR", NULL, NULL							// connect to the GPRS network
 };
 
 const at_cmd http_su[7] = {												// Array of HTTP commands
-	1,	"AT+HTTPINIT",	"OK", "ERROR", NULL, NULL,						// Initialization of HTTP session
-	2,	"AT+HTTPPARA=\"CID\",1",  "OK", "", NULL, NULL,					// CID parameter for the HTTP session
-	3,	"AT+HTTPPARA=\"URL\",\"https://site.ru/123.html\"",	"OK", "", NULL, NULL, // URL line to send
-	4,	"AR+HTTPACTION=0",	"", "", NULL, NULL,							// activating of GET method
-	5,	"AT+HTTPREAD",	"", "", NULL, NULL,								// reading of server answer
-	6,	"AT+HTTPTERM",	"", "", NULL, NULL,								// terminating the HTTP-session
-	7, 	"AT+HTTPSTATUS?",	"", "", NULL, NULL,							// status of send\recieve process	
+	1,	"AT+HTTPINIT\r\n",	"OK", "ERROR", NULL, NULL,						// Initialization of HTTP session
+	2,	"AT+HTTPPARA=\"CID\",1\r\n",  "OK", "", NULL, NULL,					// Set CID parameter for the HTTP session
+	3,	"AT+HTTPPARA=\"URL\",\"https://site.ru/123.html\"\r\n",	"OK", "", NULL, NULL, // URL line to be send
+	4,	"AT+HTTPACTION=0\r\n",	"", "", NULL, NULL,							// activating of GET method
+	5,	"AT+HTTPREAD\r\n",	"", "", NULL, NULL,								// reading of server answer
+	6,	"AT+HTTPTERM\r\n",	"", "", NULL, NULL,								// terminating the HTTP-session
+	7, 	"AT+HTTPSTATUS?\r\n", "GET,0,0,0", "", NULL, NULL,							// status of send\recieve process	
 };  
-/*
-		AT+HTTPSTATUS?
-		AT+HTTPINIT 					//Инициализация http сервиса 
-		AT+HTTPPARA="CID",1 			//Установка CID параметра для http сессии 
-		AT+HTTPPARA="URL","https://site.ru/123.html" 
-		AR+HTTPACTION=0					// activating of GET method
-
-		AT+HTTPREAD 					//Читаю данные 
-		AT+HTTPTERM 					//Завершаю работу HTTP службы 
-*/
 
 void app_func_ext1(void *data)
 {
@@ -308,51 +298,141 @@ eat_bool sonic_sequence(u32 time_btw_pings_ms, u16 distance_min_cm, u16 distance
 	return vehicle;
 };
 
-void app_user1(void* data){
-	const char *colour[] = {0}; // { "Blue", "Red", "Orange", "Yellow" }; 
-	eat_bool next_step = EAT_TRUE;
-	eat_bool mgmnt_done;
-	eat_bool su_needed;
-	eat_bool html_su_needed;
-	u32 event_num;
+void app_user1(void* data){	
 	EatEvent_st event;	
-  	EatRtc_st* tdt = {0};			// Pointer to Time data recieved from Main process
-	// EatRtc_st td;					// Time data according to EAT RTC data structure
-
+	u32 event_num;
+	
+  	EatRtc_st* tdt = {0};				// Pointer to Time data recieved from Main process
+	EatRtc_st rtc = {0};
+	eat_bool rtc_result = EAT_FALSE;
+	u8 h, m, s;							// hours, minutes, seconds
+	
 	unsigned char modem_buf[2048] = {0};		// Data buffer for the inf. exchange btw USER1 and core (modem)
 	u16 len, l;
+	u16 del_cmd = 500;
+	u8 i;	
 	
+	eat_bool next_step = EAT_TRUE;
+	eat_bool msrmnt_done = EAT_FALSE;
+	eat_bool gprs_su_needed = EAT_TRUE;
+	eat_bool http_su_needed = EAT_TRUE;
+	eat_bool send_data	= EAT_FALSE;
+	u8 step = 0;
+	u8 data_str_result;
+	char data_to_send[90] = "";
+	const char *url = "http://kot60.online/sim800/sim800connect.php";	
+	
+	for (i = 0; i < 7; i++) eat_trace("111 User1 setup [%s]", gprs_su[i].atcmd);
+	/*
 	sprintf( (char *)modem_buf,"ATI\r\n");
 	l = strlen( (const char *)modem_buf );						// Length of the message to be written to modem
     len = eat_modem_write(modem_buf, l);		// Length of data writen to the modem (core)
-    if(len != l) eat_trace("Write to modem return len:%d", len);
-
-	colour[2] = "Blue";
-	colour[3] = "Orange";
-	colour[4] = "Yellow";
+    if(len != l) eat_trace("Write to modem return len:%d", len); */
 	
+	sprintf( (char *)modem_buf,"AT+CCALR?\r\n");
+	l = strlen( (const char *)modem_buf );						// Length of the message to be written to modem
+    len = eat_modem_write(modem_buf, l);		// Length of data writen to the modem (core)
+    if(len != l) eat_trace("Write to modem return len:%d", len);
+	
+	eat_timer_start(EAT_TIMER_2, 1000);
+
 	while(EAT_TRUE){
 		event_num = eat_get_event_num_for_user(EAT_USER_1);
 		eat_get_event_for_user(EAT_USER_1, &event);
 		
 		
-		if (next_step) {
+		if (gprs_su_needed && next_step) {								// GPRS SetUp
+							
+				sprintf( (char *)modem_buf, gprs_su[step].atcmd);		// AT-command of GPRS SU to Modem buffer
+				
+				l = strlen( (const char *)modem_buf );					// Length of the message to be written to modem	
+				len = eat_modem_write(modem_buf, l);					// Length of data writen to the modem (core)
+				eat_trace("111 USER1 wrote to Modem: [%s], l = %d, len = %d ooooo ooooo", modem_buf, l, len);
+				if(len != l) eat_trace("Write to modem return len:%d not equal to l:%d", len, l);
+						
+				eat_sleep(del_cmd);
 			
+			next_step = EAT_FALSE;
+			
+			step++;
+			if (step == 4) step = 6;  // Block setting of USR and PWD
+			if (step == 7) {
+				step = 0;
+				gprs_su_needed = EAT_FALSE;    // End of the GPRS SetUp				
+			}
+			eat_trace("111 USER1 status: step [%d], gprs_su_needed [%d]", step, gprs_su_needed);
+		}
+		
+		if (send_data && next_step) { // Free to send data to the server			
+			rtc_result = eat_get_rtc(&rtc);
+			
+			if ( step == 2 ) {											// Data preparation to be written to the modem
+				data_str_result = sprintf ((char *)modem_buf, "AT+HTTPPARA=\"URL\",\"%s?H=%d&M=%d&S=%d&Ht=%d&Mt=%d&St=%d\"\r\n\r\n", url, rtc.hour, rtc.min, rtc.sec, tdt->hour, tdt->min, tdt->sec);				
+			} else {
+				sprintf( (char *)modem_buf, http_su[step].atcmd);		// AT-command of HTTP SU to Modem buffer
+			}
+			// if ( step == 3 ) eat_sleep( 1000 );						// Delay 4.0S after execution of HTTPACTION
+			
+			if ( step == 4 ) { 
+				eat_sleep( 5000 );										// Delay 3.0S/10mS after execution of HTTPREAD				
+			}
+			eat_trace ("111 USER1 Timestamp: %d:%d:%d (Write to modem)", rtc.hour, rtc.min, rtc.sec);
+			
+			
+			
+  			l = strlen( (const char *)modem_buf );					// Length of the message to be written to modem	
+			len = eat_modem_write(modem_buf, l);					// Length of data writen to the modem (core) & writing data to the modem
+			eat_trace("111 USER1 to Modem: [%s], l = %d, len = %d", modem_buf, l, len);
+			if(len != l) eat_trace("Write to modem return len:%d not equal to l:%d", len, l);
+			
+			next_step = EAT_FALSE;
+			
+			step++;			
+			if (step == 6) {										// All HTTP command have been fulfilled (w/o httpstatus)
+				step = 0;
+				msrmnt_done = EAT_FALSE;
+				send_data = EAT_FALSE;
+			}
 		}
 		
 		switch(event.event)
         {
-            case EAT_EVENT_MDM_READY_RD:
+			case EAT_EVENT_TIMER:
+				{
+					if ( event.data.timer.timer_id == EAT_TIMER_2 ) {		
+						eat_timer_stop(EAT_TIMER_2);		
+						eat_timer_start(EAT_TIMER_2, 1000);						
+						eat_trace("111 USER1 Timer_2");
+					}	
+				}
+				break;
+				
+            case EAT_EVENT_MDM_READY_RD:  // read from the modem
                 {
-                    len = eat_modem_read(modem_buf, 2048);  
+                    len = eat_modem_read(modem_buf, 2048);  		// Reading data from the modem
+					rtc_result = eat_get_rtc(&rtc);
+					eat_trace ("111 USER1 Timestamp: %d:%d:%d (Read from modem)", rtc.hour, rtc.min, rtc.sec);
+			
                     if(len != 0)
                     {
                         modem_buf[len] = '\0';
-                        eat_trace("Read from modem User1: %s", modem_buf);
+						next_step = EAT_TRUE;
+                        eat_trace("111 USER1 from modem: [%s], next_step: [%d]", modem_buf, next_step);
+						
+						if ( strstr(modem_buf, "Time:") ) {
+							sscanf(strstr(modem_buf, "Time:") + 5, "%d:%d:%d", &h, &m, &s); //&rtc.hour, &rtc.min, &rtc.sec);
+							eat_trace ("111 USER1 Server Time: %d:%d:%d (Read from modem)", h, m, s); //rtc.hour, rtc.min, rtc.sec);
+							rtc.hour = h; rtc.min = m; rtc.sec = s;
+							if ( ( h != rtc.hors || (m - rtc.min) > 2 || (m - rtc.min) < -2 ) {
+								rtc_result = eat_set_rtc(&rtc);
+								eat_trace ("111 USER1 sim800 RTC synchronized with server");
+							}
+						}
+						
                     } else  eat_trace("Read modem fail!");
                 }
                 break;
-            case EAT_EVENT_MDM_READY_WR:
+            case EAT_EVENT_MDM_READY_WR:   // write to the modem
                 {
                     eat_trace("event :%s,can continue to write to modem", "EAT_EVENT_MDM_READY_WR");
                 }
@@ -362,48 +442,29 @@ void app_user1(void* data){
                     eat_trace("Ring level", event.data.mdm_ri);
                 }
                 break;
-			case EAT_EVENT_USER_MSG:
-				{	
-					/*
-					atcmd_to_modem("AT+CREG?\r\n");					
-					atcmd_to_modem("AT+CSQ\r\n");
-					atcmd_to_modem("AT+CGREG?\r\n"); */
-					
-					//   eat_sleep(5000);
-					/*
-					atcmd_to_modem("AT+CGATT?\r\n");
-					atcmd_to_modem("AT+CIPSTATUS\r\n");
-					atcmd_to_modem("AT+SAPBR=0,1\r\n");
-					
-					atcmd_to_modem("AT+CCALR?\r\n"); */
-					
-					/*
-					unsigned char modem_buf[2048] = {0};		// Data buffer for the inf. exchange btw USER1 and core (modem)
-					u16 len, l;
-					sprintf( (char *)modem_buf,"ATI\r\n");		// Some AT-command
-					l = strlen( (const char *)modem_buf );		// Length of the message to be written to modem
-					len = eat_modem_write(modem_buf, l);		// Length of data writen to the modem (core)
-					// eat_trace(" ooooo oooooo Modem write: l = %d, len = %d ooooo ooooo", l, len);
-					if(len != l) eat_trace("Write to modem return len:%d not equal to l:%d", len, l); */
-					
-					eat_trace(" ooooo oooooo Colours are %s %s %s ooooo ooooo", colour[2], colour[3], colour[4]);
-				
-					eat_trace(" ******* USER 1: %d %d %d %s %x", event.data.user_msg.src, event.data.user_msg.use_point, 
+			case EAT_EVENT_USER_MSG:     // get massage from the 'main' process
+				{					
+					// *** Reading of the message from other processes (i.g. Main) ***
+					eat_trace("111 USER1 event.data.user_msg: %d %d %d %s %x", event.data.user_msg.src, event.data.user_msg.use_point, 
 					event.data.user_msg.len, event.data.user_msg.data, event.data.user_msg.data_p);  
 					
-					if (event.data.user_msg.use_point) {
-						// tdt = (EatRtc_st *) &event.data.user_msg.data_p;  // no error
-						tdt = (EatRtc_st *) event.data.user_msg.data_p;  // trial
+					if (event.data.user_msg.use_point) {					// If the message from main uses pointer
+						tdt = (EatRtc_st *) &event.data.user_msg.data_p;  	// no error. A pointer to the RTC structure copied ti the USER1 tdt pointer variable
 						// td = event.data.user_msg.data_p;
 						
-						time_out ( (EatRtc_st*) &event.data.user_msg.data_p );
-						time_out ( (EatRtc_st*) &tdt );
+						show_time ( (EatRtc_st*) &event.data.user_msg.data_p, "msg.data_p" ); 	// Display the whole time structure
+						// show_time ( (EatRtc_st*) &tdt, "tdt" );
+						show_time ( (EatRtc_st*) tdt, "tdt" ); 									// trial. Should be the same as previous
 						
-						eat_trace(" User 1: 0000 ----- tdt = %x &tdt = %x, data.p = %x &data.p = %x, (EatRtc_st*) &data_p = %x ----- 0000", tdt, &tdt, event.data.user_msg.data_p, &event.data.user_msg.data_p, (EatRtc_st*) &event.data.user_msg.data_p);
+						eat_trace("111 User 1: tdt = %x &tdt = %x, data.p = %x &data.p = %x, (EatRtc_st*) &data_p = %x", tdt, &tdt, event.data.user_msg.data_p, &event.data.user_msg.data_p, (EatRtc_st*) &event.data.user_msg.data_p);
 						// eat_trace(" ******* USER 1: %d %d %d %s %x", event.data.user_msg.src, event.data.user_msg.use_point, 
 						//	event.data.user_msg.len, event.data.user_msg.data, event.data.user_msg.data_p);  
-						eat_trace(" +++++++++ 000000000          USER 1: Time:  %d:%d:%d  Date: %d/%d/%d   Week day = %d   0000000000 ++++++++\n", &tdt->hour, &tdt->min, &tdt->sec, &tdt->day, &tdt->mon, &tdt->year, &tdt->wday ); 
-						rtc_mem ( (char*) &tdt );				
+						eat_trace("111 USER 1: Time:  %d:%d:%d  Date: %d/%d/%d   Week day = %d", tdt->hour, tdt->min, tdt->sec, tdt->day, tdt->mon, tdt->year, tdt->wday ); 
+						show_rtc_mem ( (char*) tdt);	
+
+						msrmnt_done = EAT_TRUE;
+						send_data = EAT_TRUE;
+						next_step = EAT_TRUE; step = 0;
 					}
 				}
 				break; 
@@ -436,20 +497,20 @@ void atcmd_to_modem(char* atcmd, EatEvent_st* event) {
     } else  eat_trace("Read modem fail!");
 }
 
-void time_out (EatRtc_st* time) {
-	eat_trace(" qqqqqqqq  Time(h/m/S): %d/%d/%d Date(d/m/Y/dow): %d/%d/%d %d qqqqqqqq", time->hour, time->min, time->sec, time->day, time->mon, time->year, time->wday);
+void show_time (EatRtc_st* time, char *msg) {
+	eat_trace("FFF Function SHOW_TIME %s Time(h:m:S): %d:%d:%d Date(d/m/Y/dow): %d/%d/%d %d", msg, time->hour, time->min, time->sec, time->day, time->mon, time->year, time->wday);
 }
 
-void rtc_mem (char* time) {
+void show_rtc_mem (char* time) {
 	char mem[14] = {0};
+	
 	u8 i;
 	
 	for( i = 0; i < 14; i++) {
 		mem[i] += *(time + i);
 	}
 	
-	eat_trace (" XXXXXXXXXXXXXXXXXXX  mem = %d%d%d%d%d%d%d%d%d%d%d%d%d%d XXXXXXXXXXXXXXXXXXXX ", mem[0] ,mem[1], mem[2], mem[3], mem[4], mem[5] ,mem[6], mem[7], mem[8], mem[9], mem[10] ,mem[11], mem[12], mem[13] );
-	
+	eat_trace ("FFF Function SHOW_RTC_MEM:  mem = %d:%d:%d %d/%d/%d/%d %d%d%d%d %d%d%d", mem[0] ,mem[1], mem[2], mem[3], mem[4], mem[5] ,mem[6], mem[7], mem[8], mem[9], mem[10] ,mem[11], mem[12], mem[13] );
 }
 
 void app_main(void *data)
@@ -474,23 +535,23 @@ void app_main(void *data)
 	EatRtc_st rtc = {0};
 	EatRtc_st truck = rtc; // {0};
 	
-	eat_trace(" 0000 ----- rtc = %x &rtc = %x, truck = %x &truck = %x, (const unsigned char **) &truck = %x ----- 0000", 
-		rtc, &rtc, truck, &truck, (const unsigned char **) &truck);   // Mem adresses
-	time_out ( &rtc );
-	time_out ( &truck );
+	eat_trace("000 APP_MAIN (setup) line 519: rtc =   %x &rtc =   %x, (const unsigned char **) &rtc =   %x", rtc, &rtc, (const unsigned char **) &rtc );
+	// eat_trace("000 APP_MAIN (setup) line 520: truck = %x &truck = %x, (const unsigned char **) &truck = %x", truck, &truck, (const unsigned char **) &truck);
+	show_time ( &rtc, "rtc" );
+	// show_time ( &truck, "truck" );
 	
 		rtc.year = 20;	rtc.mon = 9;	rtc.day = 7;	rtc.wday = 2;
-        rtc.hour = 15;	rtc.min = 02;	rtc.sec = 00;
-    rtc_result = eat_set_rtc(&rtc);	// RTC setup procedure
+        rtc.hour = 12;	rtc.min = 06;	rtc.sec = 45;
+    rtc_result = eat_set_rtc(&rtc);							// RTC setup procedure
 	
 	truck = rtc;
 	
-	time_out ( &rtc );
-	time_out ( &truck );
+	show_time ( &rtc, "rtc" );
+	// show_time ( &truck, "truck" );
 	
-	
-	eat_trace(" 0000 ----- rtc = %x &rtc = %x, truck = %x &truck = %x, (const unsigned char **) &truck = %x ----- 0000", rtc, &rtc, truck, &truck, (const unsigned char **) &truck);
-	
+	eat_trace("000 APP_MAIN (setup) line 533: rtc =   %x &rtc =   %x, (const unsigned char **) &rtc =   %x", rtc, &rtc, (const unsigned char **) &rtc );
+	// eat_trace("000 APP_MAIN (setup) line 534: truck = %x &truck = %x, (const unsigned char **) &truck = %x", truck, &truck, (const unsigned char **) &truck);
+		
 	if ( rtc_result ) eat_trace (" **** RTC set up OK ****"); else eat_trace (" **** RTC malfunction! ****");
 	
     APP_InitRegions();	//Init app RAM, first step
@@ -527,20 +588,22 @@ void app_main(void *data)
 																				// request the timestamp from the server, get RTC timestamp, sent the event information to the server
 							rtc_result = eat_get_rtc(&rtc);		
 							truck = rtc;
-							eat_trace(" 0000 ----- rtc = %x &rtc = %x, truck = %x &truck = %x, (const unsigned char **) &truck = %x ----- 0000", rtc, &rtc, truck, &truck, (const unsigned char **) &truck);
+							eat_trace("000 APP_MAIN (loop) line 569: rtc =   %x &rtc =   %x, (const unsigned char **) &rtc =   %x", rtc, &rtc, (const unsigned char **) &rtc );
+							// eat_trace(" 0000000000 APP_MAIN (loop) line 570: truck = %x &truck = %x, (const unsigned char **) &truck = %x 0000000000", truck, &truck, (const unsigned char **) &truck);
 							/*if( rtc_result )	eat_trace(" ***** Current RTC time: %d/%d/%d %02d:%02d:%02d ******", rtc.year,rtc.mon,rtc.day,rtc.hour,rtc.min,rtc.sec);
 							else				eat_trace("Get RTC time fail"); */
-							eat_trace (" ++++++++ 0000000000 oooooooo  Vehicle detected,  Time:  %d:%d:%d  Date: %d/%d/%d  oooooooo 0000000000 ++++++++\n", rtc.hour,rtc.min,rtc.sec, rtc.day,rtc.mon,rtc.year );
+							eat_trace ("000 APP_MAIN (loop) line:572  Vehicle detected,  Time:  %d:%d:%d  Date: %d/%d/%d", rtc.hour,rtc.min,rtc.sec, rtc.day,rtc.mon,rtc.year );
 							
 							// (from task main, to task user_1, use_point, message data length, Message data body parts "123....90", Message data section)
 							// eat_send_msg_to_user(EAT_USER_0, EAT_USER_1, EAT_FALSE, 20, "12345678901234567890", EAT_NULL ); // Works OK!
 							// (from task main, to task user_1, use_point, message data length 4 bytes addr, Message data body parts (EAT_NULL - not used), Message data section)
+							eat_trace ("000 APP_MAIN (loop) line:577 time data to send to USER1: %x\n", (const unsigned char **) &rtc );
 							eat_send_msg_to_user(EAT_USER_0, EAT_USER_1, EAT_TRUE, 4, EAT_NULL, (const unsigned char **) &rtc); 
 							
-							rtc_mem ( (char *) &rtc );
-							time_out ( &rtc );
+							show_rtc_mem ( (char *) &rtc );
 
-							time_out ( &truck );
+							show_time ( &rtc, "rtc" );
+							// show_time ( &truck, "truck" );
 					
 							report_done = EAT_TRUE;						
 						}					
@@ -555,9 +618,9 @@ void app_main(void *data)
 						eat_kpled_sw(EAT_FALSE);
 					}				
 				}
-
-				eat_trace (" ********  Time: %d:%d:%d Date: %d/%d/%d  Dist.: %d cm -> %s,  %s ********", rtc.hour, rtc.min, rtc.sec, rtc.day, rtc.mon, rtc.year,  
-				sr04_echo.width/58, sonic_positive ? "US-signal HIGH":"US-signal LOW", result_vehicle );
+				// *******  Timestemp, distance, US-signal and measurement result *******
+				/* eat_trace (" ********  Time: %d:%d:%d Date: %d/%d/%d  Dist.: %d cm -> %s,  %s ********", rtc.hour, rtc.min, rtc.sec, rtc.day, rtc.mon, rtc.year,  
+				sr04_echo.width/58, sonic_positive ? "US-signal HIGH":"US-signal LOW", result_vehicle ); */
 				
 		
         switch(event.event)

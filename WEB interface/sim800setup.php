@@ -1,108 +1,100 @@
 <!DOCTYPE html>
-  <?php   
-    
+  <?php       
 	/* Default data 
 	$Hrtc = 20; $Mrtc = 30; $Srtc = 45;     - sim800 rtc data
 	$Htruck = 15; $Mtruck = 30; $Struck = 45;    - truck detection time */
 
 	/* Check weather there are data in the client message which looks like:
-		kot60.online/sim800/sim800connect.php?H=09&M=10&S=11&Ht=21&Mt=50&St=55*/  
-	$data_consist = 0;
+		http://kot60.online/sim800/sim800setup.php?imei=1234567890&pwd=qwerty */  
+	class sim800SetUpData {
+		public $sysD;
+		public $sysT;
+		public $password;
+		public $distMin;
+		public $distMax;
 		
-	if (!filter_has_var(INPUT_GET, "MAC")) 	$mac = 0; 			else  $mac = $_GET['MAC'];
-	if (!filter_has_var(INPUT_GET, "pwd")) 	$pwd = ""; 			else  $pwd = $_GET['pwd'];
-	
-	$get_all = $_GET['0'];
-	$post_all = $_POST[1];
-	/*
-	if (!filter_has_var(INPUT_GET, "S")) 	$Srtc = 14; 		else  $Srtc = $_GET['S'];
-
-	if (!filter_has_var(INPUT_GET, "Ht")) 	$Htruck = 15; 		else  $Htruck = $_GET['Ht'];
-	if (!filter_has_var(INPUT_GET, "Mt")) 	$Mtruck = 30; 		else  $Mtruck = $_GET['Mt'];
-	if (!filter_has_var(INPUT_GET, "St")) 	$Struck = 45; 		else  $Struck = $_GET['St']; */
-	
-	/* echo "Modem time: " . $Hsim . ":" . $Msim . ":" . $Ssim . "<br>";
-	echo "Modem date: " . $Dsim . "/" . $Mosim . "/" . $Ysim . "<br>" . "<br>"; */
-	
-	
-	date_default_timezone_set("Europe/Moscow");  
-	
-	$sysD = date ("Y-m-d");			/* System date Y-m-d */
-	$sysT = date("H:i:s");			/* System time H, i, s */
-	$servH = strval( date("H") ); 
-	$servM = strval( date("i") );
-	$servS = strval( date("s") );
-	
-	
-	
-	/*$servD = strval( date("j") ); 
-	$servMo = strval( date("m") ); 
-	$servY = strval( date("Y") ); */
-	
-	echo "Date: " . $sysD . "<br>";
-	echo "Time: " . $sysT;
-	
-	echo "<br><br>MAC " . $mac . "<br>pwd " . $pwd . "<br>";
-	echo "Get_all: " . $get_all . $_GET . " end<br>";
-	echo "POST_all: " . $post_all . " end<br>";
-	
-	if ($_POST) {
-    echo '<pre>';
-    echo htmlspecialchars(print_r($_POST, true));
-    echo '</pre>';
+		function __construct() {
+			$this->sysD = "2020-01-01";
+			$this->sysT = "12:13:14";
+			$this->password = "wrong_pwd";
+			$this->distMin = 201;
+			$this->distMax = 501;
+			// echo "Constructor: " . $this->password . " " . $this->distMin . " " . $this->distMax . " " . $this->sysD . " " . $this->sysT . "<br><br>";
+		} 
+		function __destruct() {
+			// echo "SetUp data destroied";
+		}
+		function setTnD () {
+			date_default_timezone_set("Europe/Moscow");  	
+			$this->sysD = date ("Y-m-d");				/* System date Y-m-d */
+			$this->sysT = date ("H:i:s");				/* System time H, i, s */		
+		}
+		function set_pwd($pwd) {
+			$this->password = $pwd;
+		}		
+		function setDist($distMin, $distMax) {
+			$this->distMin = $distMin;
+			$this->distMax = $distMax;
+		}		
+		function get_dist() {			
+		}		
 	}
-	if ($_GET) {
-		echo '<pre>';
-		echo htmlspecialchars(print_r($_GET, true));
-		echo '</pre>';
-	}
-	echo '<pre>';
-	echo htmlspecialchars(print_r($_REQUEST, true));
-	echo '</pre>';
 	
-	echo "Request method: " . $_SERVER['REQUEST_METHOD'] . "<br>";
+	if (!filter_has_var(INPUT_GET, "imei")) $imei = 123; 		else  $imei = $_GET['imei'];  	// Reading the imei code from the calling device
+	if (!filter_has_var(INPUT_GET, "pwd")) 	$pwd = "wrong_pwd"; else  $pwd = $_GET['pwd'];		// pwd from the calling device
 	
+	$setUpData = new sim800SetUpData();
 	
-foreach (getallheaders() as $name => $value) {
-    echo "$name: $value\n <br>";
-}
-
-$portnum = getservbyname("http", "tcp");
-echo "<br>" . $portnum . "<br>";
-
-
-$host = gethostbyaddr($_SERVER["REMOTE_ADDR"]);
-echo "<br>" . $host . "<br>";
-
-echo CHECK_IMEI;
-
-
-	
-	/*	
-	$data_file = fopen ("sim800truck_data.txt", "w") or die("Unable to open file!");  
-	$trucks[] = $servT; 
-	$trucks_number = count($trucks);
+	require 'sim800_db/sim800credentials.php';
+		/*
+		if ($cred_db) {
+			echo '<pre>'; 
+			echo "cred_db: <br>";
+			echo htmlspecialchars(print_r($cred_db, true));
+			echo '</pre>';
+		}*/		
 		
-	$data = "";
+	$conn = db_connect($cred_db);
+	read_db($conn, $imei, $setUpData);		
+
+	function db_connect(&$cred) { 				//Passing arguments by reference
+		// Create connection
+		$conn = new mysqli($cred['server'], $cred['user'], $cred['pwd'], $cred['db']); 
+
+		// Check connection
+		if ($conn->connect_error) die("Connection failed: " . $conn->connect_error); 
+		// else echo "Connected successfully<br>";	
+
+		return $conn;
+	}	
+
+	function read_db(&$conn, $imei, &$setUpData) {
+		// Reading DB			
+		$sql = "SELECT ID, password, dist_max, dist_min FROM Registrator WHERE imei = \"" . $imei . "\"";
+		$result = $conn->query($sql);	
+			
+		if ($result->num_rows > 0) {			
+			// while($row = $result->fetch_assoc()) {} 			if we do know that there are more then one row
+			$row = $result->fetch_assoc();						// output data from one row				
+			
+			$setUpData->set_pwd( $row["password"] );
+			$setUpData->setDist( $row["dist_min"], $row["dist_max"] );
+					
+			// echo "Registrator Nu. " . $row["ID"] . "  password: " . $row["password"] . "  DistMax: " . $row["dist_max"] . "  Dist_min: " . $row["dist_min"] . "<br><br>"; 			  
+		} else {
+			 echo "0 results<br>";
+		}
+	}
 	
-	if ( $Hrtc < 10 ) $data .= "\$Hrtc = " . "0" . $Hrtc . ";\r\n"; else $data .= "\$Hrtc = " . $Hrtc . ";\r\n";
-	if ( $Mrtc < 10 ) $data .= "\$Mrtc = " . "0" . $Mrtc . ";\r\n"; else $data .= "\$Mrtc = " . $Mrtc . ";\r\n";
-	if ( $Srtc < 10 ) $data .= "\$Srtc = " . "0" . $Srtc . ";\r\n"; else $data .= "\$Srtc = " . $Srtc . ";\r\n";
-	
-	if ( $Htruck < 10 ) $data .= "\$Htruck = " . "0" . $Htruck . ";\r\n"; else $data .= "\$Htruck = " . $Htruck . ";\r\n";
-	if ( $Mtruck < 10 ) $data .= "\$Mtruck = " . "0" . $Mtruck . ";\r\n"; else $data .= "\$Mtruck = " . $Mtruck . ";\r\n";
-	if ( $Struck < 10 ) $data .= "\$Struck = " . "0" . $Struck . ";\r\n"; else $data .= "\$Struck = " . $Struck . ";\r\n";
-	
-	$data .= "\$Hrtc = " . $Hrtc . ";\r\n";
-	$data .= "\$Mrtc = " . $Mrtc . ";\r\n";
-	$data .= "\$Srtc = " . $Srtc . ";\r\n";
-	$data .= "\$Htruck = " . $Htruck . ";\r\n";
-	$data .= "\$Mtruck = " . $Mtruck . ";\r\n";
-	$data .= "\$Struck = " . $Struck . ";\r\n";*/ 
-	
-	/* $data .= "\$servT = " . $servT . ";\r\n";
-	$data = "<?php\n" . $data . "?>"; */
-	/* fwrite($data_file, $data);
-	fclose($data_file); */
-	
-	?>
+	if ( $pwd === $setUpData->password ) {
+		
+		$setUpData->setTnD();
+		
+		echo "Date: " . $setUpData->sysD . "<br>";
+		echo "Time: " . $setUpData->sysT . "<br><br>";
+		
+		echo "DistMin: " . $setUpData->distMin . "<br>";
+		echo "DistMax: " . $setUpData->distMax . "<br>";
+	}	
+?>
+</html>

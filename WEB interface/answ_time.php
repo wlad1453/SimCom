@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>sim800 data</title>
+    <title>sim800</title>
   </head>
   <body>
   <p>

@@ -4,14 +4,13 @@
  * FileName      :   app_demo_gpio.c
  * version       :   0.10
  * Description   :   
- * Authors       :   fangshengchang
+ * Authors       :   
  * Notes         :
  *---------------------------------------------------------------------
  *
  *    HISTORY OF CHANGES
  *---------------------------------------------------------------------
- *0.10  2012-09-24, fangshengchang, create originally.
- *0.20  2013-03-26, maobin, modify the PIN definition, to adapt to the SIM800W and SIM800V
+ *
  *
  *--------------------------------------------------------------------
  * File Description
